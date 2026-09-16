@@ -10,12 +10,24 @@ use base::{
 };
 use nix::fcntl::OFlag;
 use nix::poll::{PollFd, PollFlags, PollTimeout};
+use nix::sys::signal::SigSet;
 use num_traits::AsPrimitive;
 use std::fmt::Write;
 use std::fs::File;
 use std::os::fd::AsFd;
 use std::os::unix::net::UCred;
+use std::os::unix::process::CommandExt;
 use std::process::{Command, exit};
+
+fn app_process_command() -> Command {
+    let mut cmd = Command::new("/system/bin/app_process");
+    // The daemon blocks signals, but ART needs them for implicit checks.
+    // SAFETY: The child only calls async-signal-safe signal mask functions.
+    unsafe {
+        cmd.pre_exec(|| SigSet::empty().thread_set_mask().map_err(Into::into));
+    }
+    cmd
+}
 
 struct Extra<'a> {
     key: &'static str,
@@ -105,7 +117,7 @@ impl SuAppContext<'_> {
 
         if use_provider {
             let provider = format!("content://{}.provider", self.info.mgr_pkg);
-            let mut cmd = Command::new("/system/bin/app_process");
+            let mut cmd = app_process_command();
             cmd.args([
                 "/system/bin",
                 "com.android.commands.content.Content",
@@ -133,7 +145,7 @@ impl SuAppContext<'_> {
             }
         }
 
-        let mut cmd = Command::new("/system/bin/app_process");
+        let mut cmd = app_process_command();
         cmd.args([
             "/system/bin",
             "com.android.commands.am.Am",
